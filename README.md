@@ -139,12 +139,11 @@ starting with a letter or digit. The prompt must not be blank or contain null
 characters. Existing sessions are never replaced; duplicate names produce a tool
 error. The prompt is passed literally, including quotes and shell characters.
 
-Both `tmux` and `codex` must be on the MCP server's `PATH`. In this environment,
-both are already installed. On a new Ubuntu installation, install `tmux` with
+Both `tmux` and `codex` must be on the MCP server's `PATH`. On Ubuntu, install `tmux` with
 `sudo apt install tmux` and follow the [official Codex CLI setup instructions](https://learn.chatgpt.com/docs/cli).
 
 `directory` is required and must point to an existing directory on the MCP
-server. Use an absolute Linux path, such as `/home/pau/projecs/koord`; `~` is
+server. Use an absolute Linux path, such as `/home/you/projects/app`; `~` is
 expanded to the server user's home directory. Relative paths, missing paths and
 files are rejected before starting tmux. Paths containing spaces are supported.
 When the server runs in WSL, use the WSL path (for example `/mnt/c/Projects/app`),
@@ -175,7 +174,7 @@ For example, ask your MCP client:
 
 ```text
 Call new_codex on koord with session_name "codex-trial",
-directory "/home/pau/projecs/koord", model "gpt-6.1-sol", effort "high", and prompt
+directory "/home/you/projects/app", model "gpt-6.1-sol", effort "high", and prompt
 "Say hello and wait for my next instruction. Do not modify files or run commands."
 ```
 
@@ -252,12 +251,8 @@ Do not remove the records while waiting for a startup hook to report its ID.
 
 ## Setup
 
-Python 3.11 or later is required. This environment has Python 3.12.3 installed
-at `/usr/bin/python3`, running on Ubuntu 24.04.
-
-This workspace already has `.venv` set up with pip and the dependencies;
-you can skip directly to running the server. Follow the steps below to set up
-a new environment.
+Python 3.11 or later is required. It is developed with Python 3.12 on Ubuntu
+24.04.
 
 If your Ubuntu installation lacks support for virtual environments with pip:
 
@@ -293,7 +288,7 @@ MCP_LOG_OPERATIONS=true
 ```
 
 `.env.example` is intended for version control; `.env` and other `.env.*` files
-are ignored by Git, except `.env.example`. This workspace already has `.env`.
+are ignored by Git, except `.env.example`.
 The server loads the file next to `server.py`, regardless of the current working
 directory. Existing process environment variables take precedence over `.env`.
 If a variable is absent, the defaults are `127.0.0.1` and `8118`.
@@ -441,15 +436,15 @@ Before installation, run it as `.venv/bin/python koord_cli.py`.
 
 ## Connecting from the Codex Windows client
 
-This workspace runs in WSL2. The steps below assume Codex runs on the same
-Windows computer and can reach the WSL server through localhost.
+These steps are for a server running in WSL2, with Codex on the same Windows
+computer reaching the WSL server through localhost.
 
 ### Start the server in WSL
 
 Open a WSL terminal and run:
 
 ```bash
-cd /home/pau/projecs/koord
+cd /path/to/koord
 .venv/bin/python server.py
 ```
 
@@ -490,7 +485,7 @@ url = "http://127.0.0.1:8118/mcp"
 
 Preserve existing configuration and update the table if `mcp_servers.koord`
 already exists. The Windows app and the WSL CLI use separate configuration
-directories by default; editing `/home/pau/.codex/config.toml` alone does not
+directories by default; editing `~/.codex/config.toml` in WSL alone does not
 configure the Windows app. See the [official Windows configuration guidance](https://learn.chatgpt.com/docs/windows/windows-app#share-config-auth-and-sessions-with-wsl).
 
 ### Call the tool
@@ -527,3 +522,7 @@ being a single `listen` call, giving up at `--timeout`, the deadlines on every
 other step (including a server that never answers), closing against a server that
 never confirms the end of the session, reading a message from standard
 input, both result shapes, endpoint resolution, and exit codes.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
