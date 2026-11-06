@@ -1,9 +1,16 @@
 """Check broadcast delivery, timeouts, and listener cleanup."""
 
 import asyncio
+import json
 import unittest
 
 import server
+
+
+def tool_json(result):
+    """The tool's value: tools return it once, as JSON in a single text block."""
+    [block] = result.content
+    return json.loads(block.text)
 
 
 class ChannelTests(unittest.IsolatedAsyncioTestCase):
@@ -69,36 +76,38 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
                 await server.listen("general", timeout)
         self.assertNotIn("general", server._listeners)
 
-    async def test_tools_publish_structured_listen_schema(self):
+    async def test_tools_publish_no_output_schema(self):
         tools = {tool.name: tool for tool in await server.mcp.list_tools()}
         self.assertEqual(set(tools), {"say", "listen", "monitor", "new_codex", "get_codex_session"})
-        schema = tools["listen"].output_schema
-        self.assertEqual(schema["properties"]["status"]["enum"], ["message", "timeout"])
-        self.assertEqual(set(schema["required"]), {"status", "message"})
+        for name, tool in tools.items():
+            with self.subTest(tool=name):
+                self.assertIsNone(tool.output_schema)
 
-    async def test_mcp_calls_return_structured_results(self):
+    async def test_mcp_calls_return_each_result_once_as_json_text(self):
         waiting = asyncio.create_task(server.mcp.call_tool("listen", {"channel": "general", "timeout": 1}))
         self.addAsyncCleanup(self.stop_listener, waiting)
         await asyncio.sleep(0)
         sent = await server.mcp.call_tool("say", {"channel": "general", "message": "Hello over MCP!"})
-        self.assertEqual(sent.structured_content, {"result": 1})
+        self.assertIsNone(sent.structured_content)
+        self.assertEqual(tool_json(sent), 1)
         received = await waiting
-        self.assertEqual(received.structured_content, {"status": "message", "message": "Hello over MCP!"})
+        self.assertIsNone(received.structured_content)
+        self.assertEqual(tool_json(received), {"status": "message", "message": "Hello over MCP!"})
         expired = await server.mcp.call_tool("listen", {"channel": "general", "timeout": 0})
-        self.assertEqual(expired.structured_content, {"status": "timeout", "message": None})
+        self.assertEqual(tool_json(expired), {"status": "timeout", "message": None})
         self.assertFalse(expired.is_error)
 
     async def test_monitor_returns_empty_json_list_without_listeners(self):
         result = await server.mcp.call_tool("monitor", {})
         self.assertFalse(result.is_error)
-        self.assertEqual(result.structured_content, {"channels": []})
+        self.assertEqual(tool_json(result), {"channels": []})
 
     async def test_monitor_counts_listeners_per_channel_in_name_order(self):
         await self.start_listener("updates")
         await self.start_listener("general")
         await self.start_listener("general")
         result = await server.mcp.call_tool("monitor", {})
-        self.assertEqual(result.structured_content, {
+        self.assertEqual(tool_json(result), {
             "channels": [
                 {"channel": "general", "listeners": 2},
                 {"channel": "updates", "listeners": 1},
@@ -107,7 +116,7 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
         await server.say("general", "Hello!")
         current = await server.monitor()
         self.assertEqual(current.channels, [server.ChannelStatus("updates", 1)])
-        self.assertEqual(len(result.structured_content["channels"]), 2)
+        self.assertEqual(len(tool_json(result)["channels"]), 2)
 
     async def test_monitor_excludes_cancelled_and_timed_out_listeners(self):
         cancelled = await self.start_listener("cancelled")
@@ -115,12 +124,6 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await server.monitor()).channels, [])
         await server.listen("expired", 0.01)
         self.assertEqual((await server.monitor()).channels, [])
-
-    async def test_monitor_publishes_json_output_schema(self):
-        tools = {tool.name: tool for tool in await server.mcp.list_tools()}
-        schema = tools["monitor"].output_schema
-        self.assertEqual(schema["type"], "object")
-        self.assertEqual(schema["properties"]["channels"]["type"], "array")
 
 
 if __name__ == "__main__":

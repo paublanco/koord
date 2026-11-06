@@ -1,6 +1,7 @@
 """Check terminal events and the operation logging toggle."""
 
 import asyncio
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -9,6 +10,12 @@ from unittest.mock import AsyncMock, patch
 from mcp.server.mcpserver.exceptions import ToolError
 
 import server
+
+
+def tool_json(result):
+    """The tool's value: tools return it once, as JSON in a single text block."""
+    [block] = result.content
+    return json.loads(block.text)
 
 
 class OperationLoggingTests(unittest.IsolatedAsyncioTestCase):
@@ -70,7 +77,7 @@ class OperationLoggingTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
             await server.mcp.call_tool("say", {"channel": "general", "message": message})
             result = await waiting
-        self.assertEqual(result.structured_content["message"], message)
+        self.assertEqual(tool_json(result)["message"], message)
         invocation = logs.records[1].getMessage()
         self.assertEqual(invocation, "** say **\n== channel: general\n== message: " + "à" * 500 + "[...]")
 

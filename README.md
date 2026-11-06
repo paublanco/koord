@@ -7,8 +7,8 @@ A Python MCP server with ephemeral channel broadcasts and interactive Codex sess
 ### say
 
 `say(channel: str, message: str)` broadcasts a message to every client currently
-waiting on that channel. It returns the number of listeners notified. MCP exposes
-this count in `structured_content` as `{"result": 2}`, for example.
+waiting on that channel. It returns the number of listeners notified, as JSON text
+(`2`, for example).
 
 Messages are not buffered or stored. A message sent without any listeners is
 lost. Channel names are case-sensitive and matched exactly. Empty messages are
@@ -20,7 +20,7 @@ valid.
 The timeout is required and measured in seconds; it must be finite and
 non-negative. A timeout of zero returns immediately.
 
-The result is a structured object:
+The result is a JSON object:
 
 | Outcome | Result |
 | --- | --- |
@@ -29,10 +29,15 @@ The result is a structured object:
 | Timeout expired | `{"status": "timeout", "message": null}` |
 
 Use `status` to distinguish delivery from timeout. A timeout is a normal result,
-not an MCP tool error. Invalid arguments produce a tool error. Python MCP clients
-can read the object from `result.structured_content`; the SDK also provides its
-JSON representation in the text content. The result schema and tool descriptions
-are published through `tools/list`.
+not an MCP tool error. Invalid arguments produce a tool error.
+
+Every tool returns its result once, as JSON in a single text content block, with
+no structured content and no output schema (`structured_output=False`). With
+structured output the SDK would send each result twice, as structured content and
+as the same JSON in text, and a client that shows its model both, as Codex does,
+would double the size of every message a listener receives. The tool
+descriptions, which say what each tool returns, are published through
+`tools/list`.
 
 Each call receives at most one message. Call `listen` again to wait for another
 one. All listeners already waiting when `say` runs receive the same message;
@@ -62,11 +67,12 @@ The current SDK accepts HTTP request bodies up to 4 MiB by default. This applies
 to the complete serialized request, including JSON escaping and protocol fields,
 not just the message text. A count of characters is not a byte count.
 
-`listen` returns the complete message in both text content and structured
-content. A 1 MiB ASCII message therefore produces a response slightly larger
-than 2 MiB. In a local check through the MCP HTTP application, that exchange
-completed successfully in about 20 ms. This measures server processing without
-an external client's network or model work.
+`listen` returns the complete message once, as JSON text. A 1 MiB ASCII message
+therefore produces a response slightly larger than 1 MiB. (Before results became
+text only, the same message produced a response slightly larger than 2 MiB; in a
+local check through the MCP HTTP application that exchange completed in about
+20 ms, measuring server processing without an external client's network or model
+work.)
 
 Client limits differ. The [Python SDK client](https://py.sdk.modelcontextprotocol.io/client/transports/#larger-sse-events)
 defaults to a 1 MiB SSE event limit, which can reject that response. Python
@@ -100,8 +106,7 @@ Listeners that have already received a message, been cancelled, or timed out are
 excluded. With no active listeners, the result is `{"channels": []}`.
 
 The snapshot covers all clients connected to this server process. It does not
-create a listener or consume any messages. As with `listen`, Python MCP clients
-can read the object from `result.structured_content`. The top-level object keeps
+create a listener or consume any messages. The top-level object keeps
 the `channels` list under its own key so future monitoring data can be added
 as separate fields.
 
@@ -367,6 +372,73 @@ and open `Tools` to run `monitor` without arguments.
 
 Built with the [official MCP Python SDK](https://py.sdk.modelcontextprotocol.io/).
 
+## Command-line client
+
+`koord` talks to a running server from a shell, so anything that can run a
+command can use the channels: a terminal, a script, or an agent.
+
+```bash
+koord listen review-1                  # wait for the next message, print it, exit
+koord listen review-1 --timeout 600    # give up after ten minutes
+koord say review-1 "Round 2 is ready"  # prints how many listeners received it
+koord say review-1 - < report.md       # read the message from standard input
+koord monitor                          # channels with waiting listeners, as JSON
+```
+
+It exists for one case that an MCP tool call handles badly: an agent that has
+to wait for a message without being blocked while it waits. A shell command can
+start in the background at once, and the agent's harness reports when it exits.
+An MCP call blocks the agent until it returns (Claude Code moves a call to the
+background only after two minutes). A long wait costs the agent no model steps.
+
+A wait is a single call to the server's `listen`, never a loop of shorter ones:
+between two calls nobody would be listening, and a `say` in that gap would find
+no listener and the message would be lost. Without `--timeout` the call asks for
+a wait no real one reaches, and the client reads the response with no read
+timeout (the SDK client's default would end it after 300 seconds). If the
+`koord` process is killed, the server drops its listener as the connection
+closes (checked with `SIGKILL`, `SIGTERM` and `SIGINT`), so an abandoned wait
+leaves no listener behind.
+
+Every other step has a deadline of 30 seconds: connecting with the MCP
+handshake, `say`, `monitor`, and `listen --timeout` beyond its timeout. A server
+that accepts the connection and never answers ends the command with exit code 1
+instead of holding it. Only `listen` without `--timeout` waits without a limit.
+
+Closing has a deadline too, of 5 seconds. On exit the transport may ask the
+server to end the HTTP session (a `DELETE`); if the server never confirms, the
+command still ends, with a warning on stderr and the exit code of the command
+itself, since its output is already printed. The HTTP client is closed
+explicitly.
+
+`listen` prints the message followed by a newline. Without `--timeout` it waits
+until a message arrives. It reads a result from its JSON text, or from
+structured content where a server sends it.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Message received, or command done |
+| 1 | Server unreachable or not answering in time, or the tool call failed (one line on stderr) |
+| 2 | Invalid arguments |
+| 3 | `listen --timeout` expired without a message |
+
+The endpoint is `--url`, else `KOORD_URL`, else the server's own `MCP_HOST` and
+`MCP_PORT` (process environment first, then the `.env` beside the server), else
+`http://127.0.0.1:8118/mcp`. A server bound to every interface is reached on
+loopback: `0.0.0.0` on `127.0.0.1`, `::` on `::1`.
+The client accepts SSE events up to 16 MiB, so a large message is not rejected
+by the SDK's default 1 MiB limit (see "Large messages").
+
+Installing the project (`.venv/bin/python -m pip install -e .`) creates
+`.venv/bin/koord`. To call it from any directory, link it into a directory on
+your `PATH`:
+
+```bash
+ln -s "$PWD/.venv/bin/koord" ~/.local/bin/koord
+```
+
+Before installation, run it as `.venv/bin/python koord_cli.py`.
+
 ## Connecting from the Codex Windows client
 
 This workspace runs in WSL2. The steps below assume Codex runs on the same
@@ -442,10 +514,16 @@ calls the MCP tool in its activity.
 
 Tests cover fan-out, channel isolation, discarded messages, empty messages,
 timeouts, cancellation, monitoring snapshots, session creation, literal prompt
-handling, and the published result schemas. Codex session unit tests mock the
+handling, and that every tool returns its result once, as JSON text with no
+output schema. Codex session unit tests mock the
 launcher and do not send model requests. They also verify the requested working
 directory and reject invalid directories before launching a process.
 Logging tests verify the environment toggle, invocation parameters, separate
 detail blocks, and readable parameter output for multiline messages.
 Session ID tests run the actual capture hook with synthetic startup input and
 cover delayed lookup, parallel launches, reused names, and duplicate failures.
+Command-line client tests connect to the server in-process and cover a wait
+being a single `listen` call, giving up at `--timeout`, the deadlines on every
+other step (including a server that never answers), closing against a server that
+never confirms the end of the session, reading a message from standard
+input, both result shapes, endpoint resolution, and exit codes.

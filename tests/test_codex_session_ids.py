@@ -16,6 +16,12 @@ import codex_sessions
 import server
 
 
+def tool_json(result):
+    """The tool's value: tools return it once, as JSON in a single text block."""
+    [block] = result.content
+    return json.loads(block.text)
+
+
 class CodexSessionIdTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -32,7 +38,7 @@ class CodexSessionIdTests(unittest.IsolatedAsyncioTestCase):
         record = codex_sessions.prepare_launch("trial")
         codex_sessions.register_launch("trial", record)
         pending = await server.mcp.call_tool("get_codex_session", {"session_name": "trial"})
-        self.assertIsNone(pending.structured_content["codex_session_id"])
+        self.assertIsNone(tool_json(pending)["codex_session_id"])
         hook = Path(server.__file__).with_name("codex_session_hook.py")
         subprocess.run(
             [sys.executable, str(hook)], input=json.dumps(self.event()), text=True, check=True,
@@ -40,7 +46,7 @@ class CodexSessionIdTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await server.mcp.call_tool("get_codex_session", {"session_name": "trial"})
         session_id = self.event()["session_id"]
-        self.assertEqual(result.structured_content, {
+        self.assertEqual(tool_json(result), {
             "session": "trial", "codex_session_id": session_id,
             "resume_command": f"codex resume {session_id}",
         })

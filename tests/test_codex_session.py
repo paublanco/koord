@@ -1,6 +1,7 @@
 """Check safe tmux session creation without launching a Codex model request."""
 
 import asyncio
+import json
 import shlex
 import tempfile
 import tomllib
@@ -11,6 +12,13 @@ from unittest.mock import AsyncMock, Mock, patch
 from mcp.server.mcpserver.exceptions import ToolError
 
 import server
+
+
+def tool_json(result):
+    """The tool's value: tools return it once, as JSON in a single text block."""
+    [block] = result.content
+    return json.loads(block.text)
+
 
 PROJECT_DIRECTORY = str(Path(server.__file__).resolve().parent)
 
@@ -26,7 +34,7 @@ class CodexSessionTests(unittest.IsolatedAsyncioTestCase):
         waiting.start()
         self.addCleanup(waiting.stop)
 
-    async def test_returns_structured_session_and_preserves_prompt(self):
+    async def test_returns_session_as_json_text_and_preserves_prompt(self):
         prompt = "--help; $(touch /tmp/unwanted)\nA 'quoted' prompt with `backticks`"
         process = AsyncMock()
         process.returncode = 0
@@ -41,7 +49,7 @@ class CodexSessionTests(unittest.IsolatedAsyncioTestCase):
                 "model": "custom-model", "effort": "high",
             })
 
-        self.assertEqual(result.structured_content, {
+        self.assertEqual(tool_json(result), {
             "status": "started", "session": "trial-123", "attach_command": "tmux attach -t trial-123",
             "codex_session_id": None, "resume_command": None,
         })

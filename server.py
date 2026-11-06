@@ -87,6 +87,10 @@ class KoordMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
+# Every tool returns its result as JSON text only (structured_output=False). With structured
+# output the SDK sends each result twice, as structured content and as the same JSON in text
+# content, and a client that shows its model both (Codex does) doubles the size of every
+# message a listener receives.
 mcp = KoordMCPServer("Koord")
 
 _listeners: dict[str, set[asyncio.Future[str]]] = {}
@@ -148,7 +152,7 @@ async def _wait_for_codex_session_id(record: Path, timeout: float = 3.0) -> str 
         await asyncio.sleep(min(0.1, remaining))
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def get_codex_session(session_name: str) -> CodexSessionIdentity:
     """Look up a new_codex launch's resumable Codex ID by its tmux session name.
 
@@ -167,7 +171,7 @@ async def get_codex_session(session_name: str) -> CodexSessionIdentity:
     )
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def say(channel: str, message: str) -> int:
     """Broadcast a message to all current listeners on the exact channel name.
 
@@ -183,7 +187,7 @@ async def say(channel: str, message: str) -> int:
     return delivered
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def listen(channel: str, timeout: float) -> ListenResult:
     """Wait for the next message broadcast on the exact channel name.
 
@@ -209,7 +213,7 @@ async def listen(channel: str, timeout: float) -> ListenResult:
             del _listeners[channel]
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def monitor() -> MonitorResult:
     """Return a JSON snapshot of channels with listeners currently waiting.
 
@@ -227,7 +231,7 @@ async def monitor() -> MonitorResult:
     return result
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def new_codex(
     session_name: str, prompt: str, directory: str, model: str, effort: str
 ) -> CodexSessionResult:

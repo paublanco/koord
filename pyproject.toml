@@ -12,6 +12,7 @@ dependencies = ["mcp>=2,<3", "python-dotenv>=1.2,<2"]
 
 [project.scripts]
 koord-mcp = "server:main"
+koord = "koord_cli:main"
 
 [tool.setuptools]
-py-modules = ["server", "codex_sessions", "codex_session_hook"]
+py-modules = ["server", "codex_sessions", "codex_session_hook", "koord_cli"]
